@@ -17,6 +17,7 @@ import config
 import logging
 from Queue import Queue
 import threading 
+import time 
 
 LOG_FILENAME="./data/ad_service.log"
 logger=logging.getLogger()
@@ -162,7 +163,14 @@ class ADIndex:
         if self.cache == None:
             return None
         if k in self.cache:
-            return self.cache[k]
+            m = time.time() - self.cache.mtime(k)
+            #当缓存更新时间超过5分钟则删除缓存
+            if m > 60 :
+                del self.cache[k]
+                logger.info('del cache:'+k+'==>'+m)
+                return None
+            else:
+                return self.cache[k]
         else:
             return None
     def add_cache(self,k,rep):
