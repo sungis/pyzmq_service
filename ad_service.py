@@ -167,7 +167,7 @@ class ADIndex:
             #当缓存更新时间超过5分钟则删除缓存
             if m > 60 :
                 del self.cache[k]
-                logger.info('del cache:'+k+'==>'+m)
+                #logger.info('del cache:'+k+'==>'+m)
                 return None
             else:
                 return self.cache[k]
