@@ -52,6 +52,10 @@ if __name__  == '__main__':
         request = '{"action":"removeDoc","name":"job","keyId":"67943"}'
         print send_request('remove',request)
 
+    elif action == 'cacheclean' :
+        request = '{"action":"cacheclean"}'
+        print send_request('cacheclean',request)
+
     elif action == 'adv':
         request='{"action":"adv","q":{"referurl":"http://blog.csdn.net/zhangchaoyangsun/article/details/8879615","keyword":[""]},"filter":{"city":[""],"province":[""]},"sort":1,"output":{"format":"json","offset":0,"size":6}}'
         print send_request('search',request)

@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 #
 ##  Paranoid Pirate queue
 #

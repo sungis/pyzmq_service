@@ -15,6 +15,9 @@ from cache.lrucache import LRUCache
 from hashlib import md5
 import config
 import logging
+from Queue import Queue
+import threading 
+
 LOG_FILENAME="./data/ad_service.log"
 logger=logging.getLogger()
 handler=logging.FileHandler(LOG_FILENAME)
@@ -22,6 +25,23 @@ formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 logger.setLevel(logging.INFO)
+
+class update_doc(threading.Thread):
+    def __init__(self,doc_queue,ix):
+        threading.Thread.__init__(self)
+        self.doc_queue = doc_queue
+        self.ix = ix
+    def run(self):
+        while(True):
+            jobs = self.doc_queue.get(1)
+            writer = self.ix.writer()
+            for j in jobs:
+                writer.update_document(id=j[0],orgid=j[1],
+                        title=j[2],tags=j[3]
+                        ,ishunterjob=j[4])
+                logger.info('update doc :'+str(j[0]))
+            writer.commit()
+
 
 class ADIndex:
 
@@ -46,21 +66,16 @@ class ADIndex:
         self.conn = pymongo.Connection(config.MONGO_CONN)
         self.tagsParser = Trie(config.SKILL_FILE)
         self.cache = LRUCache(1024)
+        self.doc_queue = Queue(1024)
+        self.update_doc_index_thread = update_doc(self.doc_queue,self.ix)
+        self.update_doc_index_thread.start()
      
     def add_doc(self,jobs):
-        writer = self.ix.writer()
-        rep =[] 
-        for j in jobs:
-            writer.update_document(id=j[0],orgid=j[1],
-                    title=j[2],tags=j[3]
-                    ,ishunterjob=j[4])
-            rep.append('add doc :'+str(j[0]))
-        writer.commit()
-        return rep
-
+        self.doc_queue.put(jobs)
+        return {'add doc size':len(jobs)}
     def del_doc(self,id):
         self.ix.delete_by_term('id',id)
-        return ['del doc :'+str(id)+'\r\n']
+        return {'del doc ':id}
     def find_by_query(self,q,limit):
         jobs = self.ix.searcher().search(q,limit=limit)
         return jobs
@@ -102,7 +117,7 @@ class ADIndex:
             return self.find(tags,limit)
         else:
             pageurls.insert({"_id":url})
-            #return ['insert :'+url]
+            logger.info('adv insert :'+url)
             return None
     def jobs2json(self,jobs):
         rep = {}
@@ -143,13 +158,19 @@ class ADIndex:
         return v.values()
 
     def get_cache(self,k):
+        if self.cache == None:
+            return None
         if k in self.cache:
             return self.cache[k]
         else:
             return None
     def add_cache(self,k,rep):
+        if self.cache == None:
+            return None
         self.cache[k] = rep
-
+    def del_cache(self):
+        self.cache = LRUCache(1024)
+        return {'cache size':len(self.cache)}
     def dispatch_hander(self,worker,frames):
         header = frames[2]
         data = frames[3]
@@ -187,15 +208,13 @@ class ADIndex:
         if header == 'remove' and action == "removeDoc":
             keyid = jdata ["keyId"]
             rep =self.del_doc(int(keyid))
+        if header == 'cacheclean':
+            rep = self.del_cache()            
         if header == 'search':
             size = jdata['output']["size"]
             if action == 'adv':
                 referurl = jdata['q']["referurl"]
-                if referurl in self.cache:
-                    rep = self.cache[referurl]
-                else:
-                    rep = self.jobs2json(self.search_by_url(referurl,size))
-                    self.cache[referurl] = rep
+                rep = self.jobs2json(self.search_by_url(referurl,size))
                 logger.info('adv:'+referurl)
             elif action == 'searchJob':
                 keyword = ''

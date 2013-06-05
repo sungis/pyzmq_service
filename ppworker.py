@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 #
 ##  Paranoid Pirate worker
 #
@@ -115,7 +116,7 @@ if __name__ == '__main__':
                 #liveness = HEARTBEAT_LIVENESS
                 #time.sleep(1)  # Do some heavy work
             elif len(frames) == 1 and frames[0] == PPP_HEARTBEAT:
-                #print "I: Queue heartbeat"
+                print "I: Queue heartbeat"
                 liveness = HEARTBEAT_LIVENESS
             else:
                 print "E: Invalid message: %d %s" % (len(frames),frames)
