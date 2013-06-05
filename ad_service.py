@@ -114,6 +114,7 @@ class ADIndex:
         one = pagetags.find_one({"_id": url}, {"tags": 1})
         if one :
             tags = one["tags"]
+            tags = tags.replace(',',' OR ')
             return self.find(tags,limit)
         else:
             pageurls.insert({"_id":url})
