@@ -1,4 +1,17 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
+'''
+#=============================================================================
+#     FileName: ppworker.py
+#         Desc: 广告检索
+#       Author: Sungis
+#        Email: mr.sungis@gmail.com
+#     HomePage: http://sungis.github.com
+#      Version: 0.0.1
+#   LastChange: 2013-06-21 19:51:37
+#      History:
+#=============================================================================
+'''
 #
 ##  Paranoid Pirate worker
 #
@@ -10,22 +23,22 @@ import time
 import zmq
 from ad_service import ADIndex
 import sys
+import config
 
-HEARTBEAT_LIVENESS = 3
-HEARTBEAT_INTERVAL = 1
-INTERVAL_INIT = 1
-INTERVAL_MAX = 32
+HEARTBEAT_LIVENESS = config.HEARTBEAT_LIVENESS     # 3..5 is reasonable
+HEARTBEAT_INTERVAL = config.HEARTBEAT_INTERVAL   # Seconds
+
+INTERVAL_INIT = config.INTERVAL_INIT
+INTERVAL_MAX = config.INTERVAL_MAX
 
 #  Paranoid Pirate Protocol constants
-PPP_READY = "\x01"      # Signals worker is ready
-PPP_HEARTBEAT = "\x02"  # Signals worker heartbeat
-
+PPP_READY = config.PPP_READY      # Signals worker is ready
+PPP_HEARTBEAT = config.PPP_HEARTBEAT  # Signals worker heartbeat
 
 INDEX_PATH="indexdir"
 HOST = 'localhost'
 WORKER_HOST="tcp://localhost:5556"
 SUBSCRIBER_HOST="tcp://localhost:5557"
-
 
 def worker_socket(context, poller):
     """Helper function that returns a new configured socket

@@ -1,5 +1,17 @@
 #!/usr/bin/env python
-# -*- coding: UTF-8 -*-
+# -*- coding: utf-8 -*-
+'''
+#=============================================================================
+#     FileName: client.py
+#         Desc: 客户端
+#       Author: Sungis
+#        Email: mr.sungis@gmail.com
+#     HomePage: http://sungis.github.com
+#      Version: 0.0.1
+#   LastChange: 2013-06-21 19:49:52
+#      History:
+#=============================================================================
+'''
 import zmq  
 import re
 import sys
@@ -12,7 +24,7 @@ CLIENT_IDENTITY = "AD_Client_pyzmq"
 def send_request(header,q):
   c=zmq.Context()
   s=c.socket(zmq.REQ)
-#  s.set(zmq.IDENTITY,CLIENT_IDENTITY)
+#  s.setsockopt(zmq.IDENTITY,CLIENT_IDENTITY)
   s.connect(SERVER_ENDPOINT)
   m=[header,q]
   s.send_multipart(m)
@@ -29,7 +41,7 @@ class advClient(threading.Thread):
         threading.Thread.__init__(self)
         c=zmq.Context()
         self.s=c.socket(zmq.REQ)
-        self.s.set(zmq.IDENTITY,CLIENT_IDENTITY+'__'+str(id))
+        self.s.setsockopt(zmq.IDENTITY,CLIENT_IDENTITY+'__'+str(id))
         self.s.connect(SERVER_ENDPOINT)
     def run(self):
         for i in range(100):

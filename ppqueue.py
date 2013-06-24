@@ -1,4 +1,17 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
+'''
+#=============================================================================
+#     FileName: ppqueue.py
+#         Desc: 广告服务路由
+#       Author: Sungis
+#        Email: mr.sungis@gmail.com
+#     HomePage: http://sungis.github.com
+#      Version: 0.0.1
+#   LastChange: 2013-06-21 19:50:50
+#      History:
+#=============================================================================
+'''
 #
 ##  Paranoid Pirate queue
 #
@@ -9,13 +22,15 @@ from collections import OrderedDict
 import time
 import sys
 import zmq
+import config
 
-HEARTBEAT_LIVENESS = 3     # 3..5 is reasonable
-HEARTBEAT_INTERVAL = 1.0   # Seconds
+
+HEARTBEAT_LIVENESS = config.HEARTBEAT_LIVENESS     # 3..5 is reasonable
+HEARTBEAT_INTERVAL = config.HEARTBEAT_INTERVAL   # Seconds
 
 #  Paranoid Pirate Protocol constants
-PPP_READY = "\x01"      # Signals worker is ready
-PPP_HEARTBEAT = "\x02"  # Signals worker heartbeat
+PPP_READY = config.PPP_READY      # Signals worker is ready
+PPP_HEARTBEAT = config.PPP_HEARTBEAT  # Signals worker heartbeat
 
 
 class Worker(object):
