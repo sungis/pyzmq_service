@@ -196,73 +196,80 @@ class ADIndex:
     def dispatch_hander(self,worker,frames):
         header = frames[2]
         data = frames[3]
-        mkey = ''
-        #走缓存出结果
-        if header == 'search':
-            m = md5()
-            m.update(data)
-            mkey = m.hexdigest()
-            rep = self.get_cache(mkey)
-            if rep != None:
-                rep = json.dumps(rep)
-                msg = [frames[0],frames[1],rep.encode('UTF-8')]
-                worker.send_multipart(msg)
-                logger.info('search get_cache:'+mkey)
-                return 
-        #无缓存流程
-        jdata = json.loads(data.replace("''","0"),strict=False)
-        action = jdata ["action"]
-        rep = 'request err :'+data
-        if header == 'update' and action == "updateDoc":
-            jobs=[]
-            for j in jdata['fields']:
-                tags = self.cut(j['jobname']+' '+j['description'])
-                jobid = j['jobid']
-                orgid = j['orgid']
-                jobname = unicode(j['jobname'])
-                tags = ' '.join(tags).decode('UTF-8')
-                ishunterjob=j['ishunterjob']
-                jobs.append((jobid,orgid,jobname,tags,ishunterjob))
+        rep = ''
+        try:
+            #-----------
+            mkey = ''
+            #走缓存出结果
+            if header == 'search':
+                m = md5()
+                m.update(data)
+                mkey = m.hexdigest()
+                rep = self.get_cache(mkey)
+                if rep != None:
+                    rep = json.dumps(rep)
+                    msg = [frames[0],frames[1],rep.encode('UTF-8')]
+                    worker.send_multipart(msg)
+                    logger.info('search get_cache:'+mkey)
+                    return 
+            #无缓存流程
+            jdata = json.loads(data.replace("''","0"),strict=False)
+            action = jdata ["action"]
+            rep = 'request err :'+data
+            if header == 'update' and action == "updateDoc":
+                jobs=[]
+                for j in jdata['fields']:
+                    tags = self.cut(j['jobname']+' '+j['description'])
+                    jobid = j['jobid']
+                    orgid = j['orgid']
+                    jobname = unicode(j['jobname'])
+                    tags = ' '.join(tags).decode('UTF-8')
+                    ishunterjob=j['ishunterjob']
+                    jobs.append((jobid,orgid,jobname,tags,ishunterjob))
 
-            rep = self.add_doc(jobs)
-        #remove
-        #{"action":"removeDoc","name":"job","keyID":"64983"}
-        if header == 'remove' and action == "removeDoc":
-            keyid = jdata ["keyID"]
-            rep =self.del_doc(int(keyid))
-        if header == 'cacheclean':
-            rep = self.del_cache()            
-        if header == 'search':
-            size = jdata['output']["size"]
-            if action == 'adv':
-                referurl = jdata['q']["referurl"]
-                rep = self.jobs2json(self.search_by_url(referurl,size))
-                logger.info('adv:'+referurl)
-            elif action == 'searchJob':
-                keyword = ''
-                uniqueorgid = False
-                hunterjob = False
-                if jdata.has_key('filter'):
-                    f = jdata['filter']
-                    if f.has_key('uniqueKey'):
-                        uniqueorgid = True
-                    if f.has_key('jobflag'):
-                        hunterjob = True
-                if jdata.has_key('q') and jdata['q'].has_key('keyword'):
-                    keyword = jdata['q']["keyword"]
-                rep = self.jobs2json(self.search(keyword,size,hunterjob,uniqueorgid))
-                logger.info('searchJob:keyword['+keyword+']')
-            elif action == 'all' :#所有职位
-                rep = self.jobs2json(self.find_all(size))
-                logger.info('search all')
-            elif action == 'uniqueorgid': #按orgid排重后的所有职位
-                rep = self.jobs2json(self.find_all_unique_orgid(size))
-                logger.info('search uniqueorgid')
-            elif action == 'hunterjob':#获取最新猎头数据
-                rep = self.jobs2json(self.hunter_job(size))
-                logger.info('search hunterjob')
-            #搜索结果添加缓存
-            self.add_cache(mkey,rep)
+                rep = self.add_doc(jobs)
+            #remove
+            #{"action":"removeDoc","name":"job","keyID":"64983"}
+            if header == 'remove' and action == "removeDoc":
+                keyid = jdata ["keyID"]
+                rep =self.del_doc(int(keyid))
+            if header == 'cacheclean':
+                rep = self.del_cache()            
+            if header == 'search':
+                size = jdata['output']["size"]
+                if action == 'adv':
+                    referurl = jdata['q']["referurl"]
+                    rep = self.jobs2json(self.search_by_url(referurl,size))
+                    logger.info('adv:'+referurl)
+                elif action == 'searchJob':
+                    keyword = ''
+                    uniqueorgid = False
+                    hunterjob = False
+                    if jdata.has_key('filter'):
+                        f = jdata['filter']
+                        if f.has_key('uniqueKey'):
+                            uniqueorgid = True
+                        if f.has_key('jobflag'):
+                            hunterjob = True
+                    if jdata.has_key('q') and jdata['q'].has_key('keyword'):
+                        keyword = jdata['q']["keyword"]
+                    rep = self.jobs2json(self.search(keyword,size,hunterjob,uniqueorgid))
+                    logger.info('searchJob:keyword['+keyword+']')
+                elif action == 'all' :#所有职位
+                    rep = self.jobs2json(self.find_all(size))
+                    logger.info('search all')
+                elif action == 'uniqueorgid': #按orgid排重后的所有职位
+                    rep = self.jobs2json(self.find_all_unique_orgid(size))
+                    logger.info('search uniqueorgid')
+                elif action == 'hunterjob':#获取最新猎头数据
+                    rep = self.jobs2json(self.hunter_job(size))
+                    logger.info('search hunterjob')
+                #搜索结果添加缓存
+                self.add_cache(mkey,rep)
+            #-------
+        except:
+            logger.error("except:"+str(frames))
+
         rep = json.dumps(rep)
         msg = [frames[0],frames[1],rep.encode('UTF-8')]
         worker.send_multipart(msg)
