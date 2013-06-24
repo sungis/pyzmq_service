@@ -43,6 +43,16 @@ class update_doc(threading.Thread):
                 logger.info('update doc :'+str(j[0]))
             writer.commit()
 
+class delete_doc(threading.Thread):
+    def __init__(self,doc_queue,ix):
+        threading.Thread.__init__(self)
+        self.doc_queue = doc_queue
+        self.ix = ix
+    def run(self):
+        while(True):
+            id = self.doc_queue.get(1)
+            self.ix.delete_by_term('id',id)
+            logger.info('del doc :'+str(id))
 
 class ADIndex:
 
@@ -67,15 +77,18 @@ class ADIndex:
         self.conn = pymongo.Connection(config.MONGO_CONN)
         self.tagsParser = Trie(config.SKILL_FILE)
         self.cache = LRUCache(1024)
-        self.doc_queue = Queue(1024)
-        self.update_doc_index_thread = update_doc(self.doc_queue,self.ix)
+        self.add_doc_queue = Queue(1024)
+        self.del_doc_queue = Queue(1024)
+        self.update_doc_index_thread = update_doc(self.add_doc_queue,self.ix)
         self.update_doc_index_thread.start()
+        self.delete_doc_index_thread = delete_doc(self.del_doc_queue,self.ix)
+        self.delete_doc_index_thread.start()
      
     def add_doc(self,jobs):
-        self.doc_queue.put(jobs)
+        self.add_doc_queue.put(jobs)
         return {'add doc size':len(jobs)}
     def del_doc(self,id):
-        self.ix.delete_by_term('id',id)
+        self.del_doc_queue.put(id)
         return {'del doc ':id}
     def find_by_query(self,q,limit):
         jobs = self.ix.searcher().search(q,limit=limit)
@@ -213,9 +226,9 @@ class ADIndex:
 
             rep = self.add_doc(jobs)
         #remove
-        #{"action":"removeDoc","name":"job","keyId":"64983"}
+        #{"action":"removeDoc","name":"job","keyID":"64983"}
         if header == 'remove' and action == "removeDoc":
-            keyid = jdata ["keyId"]
+            keyid = jdata ["keyID"]
             rep =self.del_doc(int(keyid))
         if header == 'cacheclean':
             rep = self.del_cache()            

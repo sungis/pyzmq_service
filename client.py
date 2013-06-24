@@ -52,7 +52,7 @@ class advClient(threading.Thread):
 def req2json(request):
     data = send_request('search',request)
     jdata = json.loads(data)
-    print 'totalCount',jdata["response"]['totalCount']
+    print jdata["server"],'totalCount',jdata["response"]['totalCount']
     if jdata["response"]['totalCount']>0:
         jobs = jdata["response"]["items"]
         for i in jobs:
