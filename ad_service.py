@@ -18,6 +18,7 @@ import logging
 from Queue import Queue
 import threading 
 import time 
+import re
 
 LOG_FILENAME="./data/ad_service.log"
 logger=logging.getLogger()
@@ -27,32 +28,34 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
-class update_doc(threading.Thread):
-    def __init__(self,doc_queue,ix):
+class update_task(threading.Thread):
+    def __init__(self,task_queue,ix):
         threading.Thread.__init__(self)
-        self.doc_queue = doc_queue
+        self.task_queue = task_queue
+        self.conn = pymongo.Connection(config.MONGO_CONN)
         self.ix = ix
     def run(self):
+        logger.info('启动异步任务队列')
+        pageurls = self.conn.pongo.pageurls
         while(True):
-            jobs = self.doc_queue.get(1)
-            writer = self.ix.writer()
-            for j in jobs:
-                writer.update_document(id=j[0],orgid=j[1],
-                        title=j[2],tags=j[3]
-                        ,ishunterjob=j[4])
-                logger.info('update doc :'+str(j[0]))
-            writer.commit()
-
-class delete_doc(threading.Thread):
-    def __init__(self,doc_queue,ix):
-        threading.Thread.__init__(self)
-        self.doc_queue = doc_queue
-        self.ix = ix
-    def run(self):
-        while(True):
-            id = self.doc_queue.get(1)
-            self.ix.delete_by_term('id',id)
-            logger.info('del doc :'+str(id))
+            task = self.task_queue.get(1)
+            if task[0] == 1:
+                jobs = task[1]
+                writer = self.ix.writer()
+                for j in jobs:
+                    writer.update_document(id=j[0],orgid=j[1],
+                            title=j[2],tags=j[3]
+                            ,ishunterjob=j[4])
+                    logger.info('update doc :'+str(j[0]))
+                writer.commit()
+            elif task[0] == 2:
+                id = task[1]
+                self.ix.delete_by_term('id',id)
+                logger.info('del doc :'+str(id))
+            elif task[0] == 3:
+                url = task[1]
+                pageurls.insert({"_id":url})
+                logger.info('adv insert :'+url)
 
 class ADIndex:
 
@@ -77,18 +80,16 @@ class ADIndex:
         self.conn = pymongo.Connection(config.MONGO_CONN)
         self.tagsParser = Trie(config.SKILL_FILE)
         self.cache = LRUCache(1024)
-        self.add_doc_queue = Queue(1024)
-        self.del_doc_queue = Queue(1024)
-        self.update_doc_index_thread = update_doc(self.add_doc_queue,self.ix)
-        self.update_doc_index_thread.start()
-        self.delete_doc_index_thread = delete_doc(self.del_doc_queue,self.ix)
-        self.delete_doc_index_thread.start()
+        self.task_queue = Queue(2048)
+        self.update_task_thread = update_task(self.task_queue,self.ix)
+        self.update_task_thread.start()
+        self.p = re.compile(u'(http://blog.csdn.net/[^\\/]+/article/details/\\d+)')
      
     def add_doc(self,jobs):
-        self.add_doc_queue.put(jobs)
+        self.task_queue.put((1,jobs))
         return {'add doc size':len(jobs)}
     def del_doc(self,id):
-        self.del_doc_queue.put(id)
+        self.task_queue.put((2,id))
         return {'del doc ':id}
     def find_by_query(self,q,limit):
         jobs = self.ix.searcher().search(q,limit=limit)
@@ -123,16 +124,19 @@ class ADIndex:
 #state 2  插入 标签
     def search_by_url(self,url,limit):
         pagetags = self.conn.pongo.pagetags
-        pageurls = self.conn.pongo.pageurls
         url = unicode(url)
-        one = pagetags.find_one({"_id": url}, {"tags": 1})
-        if one :
-            tags = one["tags"]
-            tags = tags.replace(',',' OR ')
-            return self.find(tags,limit)
+        m = self.p.search(url)
+        if m :
+            url = m.group(1)
+            one = pagetags.find_one({"_id": url}, {"tags": 1})
+            if one :
+                tags = one["tags"]
+                tags = tags.replace(',',' OR ')
+                return self.find(tags,limit)
+            else:
+                self.task_queue.put((3,url))
+                return None
         else:
-            pageurls.insert({"_id":url})
-            logger.info('adv insert :'+url)
             return None
     def jobs2json(self,jobs):
         rep = {}

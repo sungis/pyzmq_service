@@ -70,7 +70,7 @@ if __name__  == '__main__':
                 print send_request('update',request)
 
     elif action == 'remove' :
-        request = '{"action":"removeDoc","name":"job","keyId":"67943"}'
+        request = '{"action":"removeDoc","name":"job","keyID":"67943"}'
         print send_request('remove',request)
 
     elif action == 'cacheclean' :
