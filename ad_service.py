@@ -20,13 +20,7 @@ import threading
 import time 
 import re
 
-LOG_FILENAME="./data/ad_service.log"
-logger=logging.getLogger()
-handler=logging.FileHandler(LOG_FILENAME)
-formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-logger.setLevel(logging.INFO)
+logger = config.getLogger('ad_service',"./data/ad_service.log")
 
 class update_task(threading.Thread):
     def __init__(self,task_queue,ix):

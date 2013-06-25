@@ -25,6 +25,9 @@ from ad_service import ADIndex
 import sys
 import config
 
+
+logger = config.getLogger('ppworker',"./data/ppworker.log")
+
 HEARTBEAT_LIVENESS = config.HEARTBEAT_LIVENESS     # 3..5 is reasonable
 HEARTBEAT_INTERVAL = config.HEARTBEAT_INTERVAL   # Seconds
 
@@ -52,7 +55,7 @@ def worker_socket(context, poller):
     return worker
 
 def dispatch_hander(worker,frames):
-    print "I: Normal reply"
+    logger.info("I: Normal reply")
     worker.send_multipart(frames)
     liveness = HEARTBEAT_LIVENESS
     time.sleep(1)  # Do some heavy work
@@ -79,7 +82,7 @@ if __name__ == '__main__':
         WORKER_HOST="tcp://"+HOST+":5556"
         SUBSCRIBER_HOST = "tcp://"+HOST+":5557"
 
-    print 'INDEX_PATH:', INDEX_PATH ,'HOST:', HOST
+    logger.info('INDEX_PATH:%s HOST:%s' %(INDEX_PATH , HOST))
 
     ad_idx = ADIndex (INDEX_PATH)
     context = zmq.Context(1)
@@ -129,16 +132,16 @@ if __name__ == '__main__':
                 #liveness = HEARTBEAT_LIVENESS
                 #time.sleep(1)  # Do some heavy work
             elif len(frames) == 1 and frames[0] == PPP_HEARTBEAT:
-                print "I: Queue heartbeat"
+                logger.info("I: Queue heartbeat")
                 liveness = HEARTBEAT_LIVENESS
             else:
-                print "E: Invalid message: %d %s" % (len(frames),frames)
+                logger.info("E: Invalid message: %d %s" % (len(frames),frames))
             interval = INTERVAL_INIT
         else:
             liveness -= 1
             if liveness == 0:
-                print "W: Heartbeat failure, can't reach queue"
-                print "W: Reconnecting in %0.2fs..." % interval
+                logger.info("W: Heartbeat failure, can't reach queue")
+                logger.info("W: Reconnecting in %0.2fs..." % interval)
                 time.sleep(interval)
 
                 if interval < INTERVAL_MAX:
@@ -155,5 +158,5 @@ if __name__ == '__main__':
                 liveness = HEARTBEAT_LIVENESS
         if time.time() > heartbeat_at:
             heartbeat_at = time.time() + HEARTBEAT_INTERVAL
-            #print "I: Worker heartbeat"
+            logger.info("I: Worker heartbeat")
             worker.send(PPP_HEARTBEAT)

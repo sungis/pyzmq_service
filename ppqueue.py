@@ -25,6 +25,8 @@ import zmq
 import config
 
 
+logger = config.getLogger('ppqueue',"./data/ppqueue.log")
+
 HEARTBEAT_LIVENESS = config.HEARTBEAT_LIVENESS     # 3..5 is reasonable
 HEARTBEAT_INTERVAL = config.HEARTBEAT_INTERVAL   # Seconds
 
@@ -55,7 +57,7 @@ class WorkerQueue(object):
                 break
             expired.append(address)
         for address in expired:
-            print "W: Idle worker expired: %s" % address
+            logger.info("W: Idle worker expired: %s" % address)
             self.queue.pop(address, None)
 
     def next(self):
@@ -105,7 +107,7 @@ if __name__ == '__main__':
             msg = frames[1:]
             if len(msg) == 1:
                 if msg[0] not in (PPP_READY, PPP_HEARTBEAT):
-                    print "E: Invalid message from worker: %s" % msg
+                    logger.info("E: Invalid message from worker: %s" % msg)
             else:
                 frontend.send_multipart(msg)
 

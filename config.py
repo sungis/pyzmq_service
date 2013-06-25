@@ -11,3 +11,12 @@ INTERVAL_MAX = 32
 PPP_READY = "\x01"      # Signals worker is ready
 PPP_HEARTBEAT = "\x02"  # Signals worker heartbeat
 
+import logging
+def getLogger(name,logfile):
+    logger=logging.getLogger(name)
+    handler=logging.FileHandler(logfile)
+    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    return logger
