@@ -24,6 +24,7 @@ import zmq
 from ad_service import ADIndex
 import sys
 import config
+import uuid
 
 
 logger = config.getLogger('ppworker',"./data/ppworker.log")
@@ -43,11 +44,18 @@ HOST = 'localhost'
 WORKER_HOST="tcp://localhost:5556"
 SUBSCRIBER_HOST="tcp://localhost:5557"
 
+def get_mac_address():
+    node = uuid.getnode()
+    mac = uuid.UUID(int = node).hex[-12:]
+    return mac
+
+mac_address = get_mac_address()
+
 def worker_socket(context, poller):
     """Helper function that returns a new configured socket
        connected to the Paranoid Pirate queue"""
     worker = context.socket(zmq.DEALER) # DEALER
-    identity = "work:%04X-%04X" % (randint(0, 0x10000), randint(0, 0x10000))
+    identity = "work-%s:%04X-%04X" % (mac_address,randint(0, 0x10000), randint(0, 0x10000))
     worker.setsockopt(zmq.IDENTITY, identity)
     poller.register(worker, zmq.POLLIN)
     worker.connect(WORKER_HOST)
@@ -63,7 +71,7 @@ def dispatch_hander(worker,frames):
 
 def subscriber_socket(context,poller):
     subscriber = context.socket(zmq.SUB)  # SUB
-    identity = "sub:%04X-%04X" % (randint(0, 0x10000), randint(0, 0x10000))
+    identity = "sub-%s:%04X-%04X" % (mac_address,randint(0, 0x10000), randint(0, 0x10000))
     subscriber.setsockopt(zmq.IDENTITY, identity)
     subscriber.setsockopt(zmq.SUBSCRIBE, '')
     poller.register(subscriber, zmq.POLLIN)

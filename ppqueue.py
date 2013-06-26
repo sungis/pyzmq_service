@@ -106,7 +106,11 @@ if __name__ == '__main__':
             # Validate control message, or return reply to client
             msg = frames[1:]
             if len(msg) == 1:
-                if msg[0] not in (PPP_READY, PPP_HEARTBEAT):
+                if msg[0] == PPP_READY:
+                    logger.info("address:%s msg:PPP_READY" %(address))
+                elif msg[0] == PPP_HEARTBEAT:
+                    logger.info("address:%s msg:PPP_HEARTBEAT" %(address))
+                else:
                     logger.info("E: Invalid message from worker: %s" % msg)
             else:
                 frontend.send_multipart(msg)
