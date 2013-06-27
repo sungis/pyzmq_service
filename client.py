@@ -102,6 +102,12 @@ if __name__  == '__main__':
             request = sys.stdin.readline()
             print request
             req2json(request)
+    elif action == 'key':
+            k = 'java'
+            request='{ "action" : "searchJob" , "q" : { "keyword" : "'+k+'"} , "sort" : 1 , "output" : { "format" : "json" , "offset" : 0 , "size" : 30}}'
+            print k
+            req2json(request)
+
     elif action == 'thread':
         threads=[]
         n=100

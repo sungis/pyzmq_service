@@ -11,8 +11,6 @@ import pymongo
 from ac_trie import Trie
 import json
 import uuid
-from cache.lrucache import LRUCache
-from hashlib import md5
 import config
 import logging
 from Queue import Queue
@@ -73,7 +71,6 @@ class ADIndex:
         self.mac_address=self.get_mac_address()
         self.conn = pymongo.Connection(config.MONGO_CONN)
         self.tagsParser = Trie(config.SKILL_FILE)
-        self.cache = LRUCache(1024)
         self.task_queue = Queue(2048)
         self.update_task_thread = update_task(self.task_queue,self.ix)
         self.update_task_thread.start()
@@ -170,51 +167,17 @@ class ADIndex:
             v[i[0]]=i[1]
         return v.values()
 
-    def get_cache(self,k):
-        if self.cache == None:
-            return None
-        if k in self.cache:
-            m = time.time() - self.cache.mtime(k)
-            #当缓存更新时间超过5分钟则删除缓存
-            if m > 60 :
-                del self.cache[k]
-                #logger.info('del cache:'+k+'==>'+m)
-                return None
-            else:
-                return self.cache[k]
-        else:
-            return None
-    def add_cache(self,k,rep):
-        if self.cache == None:
-            return None
-        self.cache[k] = rep
-    def del_cache(self):
-        self.cache = LRUCache(1024)
-        return {'cache size':len(self.cache)}
     def dispatch_hander(self,worker,frames):
         header = frames[2]
         data = frames[3]
         rep = ''
         try:
-            #-----------
-            mkey = ''
-            #走缓存出结果
-            if header == 'search':
-                m = md5()
-                m.update(data)
-                mkey = m.hexdigest()
-                rep = self.get_cache(mkey)
-                if rep != None:
-                    rep = json.dumps(rep)
-                    msg = [frames[0],frames[1],rep.encode('UTF-8')]
-                    worker.send_multipart(msg)
-                    logger.info('search get_cache:'+mkey)
-                    return 
-            #无缓存流程
             jdata = json.loads(data.replace("''","0"),strict=False)
             action = jdata ["action"]
             rep = 'request err :'+data
-            if header == 'update' and action == "updateDoc":
+            if action == "syncDoc":
+                rep = {"message", "ok"};
+            elif header == 'update' and action == "updateDoc":
                 jobs=[]
                 for j in jdata['fields']:
                     tags = self.cut(j['jobname']+' '+j['description'])
@@ -227,13 +190,11 @@ class ADIndex:
 
                 rep = self.add_doc(jobs)
             #remove
-            #{"action":"removeDoc","name":"job","keyID":"64983"}
-            if header == 'remove' and action == "removeDoc":
+            #{"action":"removeDoc","name":"job","keyID":"64983"}            
+            elif header == 'remove' and action == "removeDoc":
                 keyid = jdata ["keyID"]
                 rep =self.del_doc(int(keyid))
-            if header == 'cacheclean':
-                rep = self.del_cache()            
-            if header == 'search':
+            elif header == 'search':
                 size = jdata['output']["size"]
                 if action == 'adv':
                     referurl = jdata['q']["referurl"]
@@ -262,14 +223,14 @@ class ADIndex:
                 elif action == 'hunterjob':#获取最新猎头数据
                     rep = self.jobs2json(self.hunter_job(size))
                     logger.info('search hunterjob')
-                #搜索结果添加缓存
-                self.add_cache(mkey,rep)
-            #-------
         except:
             logger.error("except:"+str(frames))
 
         rep = json.dumps(rep)
         msg = [frames[0],frames[1],rep.encode('UTF-8')]
+        if len(frames) == 5 :
+            msg.append(frames[4])
+
         worker.send_multipart(msg)
 
 if __name__ == '__main__' :

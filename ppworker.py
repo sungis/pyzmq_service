@@ -124,7 +124,7 @@ if __name__ == '__main__':
             if not frames:
                 break # Interrupted
 
-            if len(frames) == 4:
+            if len(frames) > 4:
                 ad_idx.dispatch_hander(worker,frames)
                 liveness = HEARTBEAT_LIVENESS
                 # Simulate various problems, after a few cycles

@@ -22,6 +22,8 @@ from collections import OrderedDict
 import time
 import sys
 import zmq
+from hashlib import md5
+from cache.lrucache import LRUCache
 import config
 
 
@@ -64,6 +66,37 @@ class WorkerQueue(object):
         address, worker = self.queue.popitem(False)
         return address
 
+class SearchCache(object):
+    def __init__(self):
+        self.size = 10240
+        self.timeout = 6
+        self.changedTime = time.time()
+        self.cache = LRUCache(self.size)
+    def data_changed(self):
+        self.changedTime = time.time()
+    def get_cache(self,k):
+        if self.cache == None:
+            return None
+        if k in self.cache:
+            m = self.changedTime - self.cache.mtime(k)
+            #当缓存更新时间 - 更新时间 超过10分钟 则删除缓存
+            if m > self.timeout:
+                del self.cache[k]
+                #logger.info('del cache:'+k+'==>'+m)
+                return None
+            else:
+                logger.info("search get_cache:%s" %mkey)
+                return self.cache[k]
+        else:
+            return None
+    def add_cache(self,k,rep):
+        if self.cache == None:
+            return None
+        self.cache[k] = rep
+        logger.info("search add_cache:%s" %mkey)
+    def del_cache(self):
+        self.cache = LRUCache(self.size)
+        logger.info('cache size :%d' %len(self.cache))
 
 if __name__ == '__main__':
     context = zmq.Context(1)
@@ -81,6 +114,8 @@ if __name__ == '__main__':
     poll_both = zmq.Poller()
     poll_both.register(frontend, zmq.POLLIN)
     poll_both.register(backend, zmq.POLLIN)
+
+    scache = SearchCache()
 
     workers = WorkerQueue()
 
@@ -109,10 +144,16 @@ if __name__ == '__main__':
                 if msg[0] == PPP_READY:
                     logger.info("address:%s msg:PPP_READY" %(address))
                 elif msg[0] == PPP_HEARTBEAT:
-                    logger.info("address:%s msg:PPP_HEARTBEAT" %(address))
+                    #logger.info("address:%s msg:PPP_HEARTBEAT" %(address))
+                    pass
                 else:
                     logger.info("E: Invalid message from worker: %s" % msg)
-            else:
+            else:#转发后台返回的结果 并缓存
+                if len(msg) == 4:
+                #搜索结果数据包长度为4,TODO 这个特征有局限,容后添加标志位
+                    mkey = msg[3]
+                    scache.add_cache(mkey,msg[2])
+                    msg.pop(3)
                 frontend.send_multipart(msg)
 
             # Send heartbeats to idle workers if it's time
@@ -125,8 +166,34 @@ if __name__ == '__main__':
             frames = frontend.recv_multipart()
             if not frames:
                 break
-            if len(frames) == 4 and (frames[2]=='update' or frames[2]=='remove'):
-                syscend.send_multipart(frames)
+            if len(frames) == 4:
+                if (frames[2]=='update' or frames[2]=='remove'):
+                    syscend.send_multipart(frames)
+                    scache.data_changed()
+                elif frames[2] == 'cacheclean':
+                    scache.del_cache()
+                    rep = 'del cache ok'
+                    msg = [frames[0],frames[1],rep]
+                    frontend.send_multipart(msg)
+                elif frames[2]=='search':
+            #当时搜索任务时,生成md5,查看是否有缓存
+            #是:构造数据包直接返回结果
+            #否:数据包中添加md5 发送到后端计算,当返回结果时添加到缓存中
+                    data = frames[3]
+                    m = md5()
+                    m.update(data)
+                    mkey = m.hexdigest()
+                    rep = scache.get_cache(mkey)
+                    if rep != None:
+                        msg = [frames[0],frames[1],rep]
+                        frontend.send_multipart(msg)
+                    else:
+                        frames.insert(0, workers.next())
+                        frames.append(mkey)
+                        backend.send_multipart(frames)
+                else:
+                    frames.insert(0, workers.next())
+                    backend.send_multipart(frames)
             else:
                 frames.insert(0, workers.next())
                 backend.send_multipart(frames)
