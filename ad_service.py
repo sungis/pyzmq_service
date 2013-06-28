@@ -13,75 +13,75 @@ import json
 import uuid
 import config
 import logging
-from Queue import Queue
-import threading 
+from multiprocessing import Process, Queue
 import time 
 import re
 
 logger = config.getLogger('ad_service',"./data/ad_service.log")
 
-class update_task(threading.Thread):
+class update_task(Process):
     def __init__(self,task_queue,ix):
-        threading.Thread.__init__(self)
+        Process.__init__(self)
         self.task_queue = task_queue
-        self.conn = pymongo.Connection(config.MONGO_CONN)
         self.ix = ix
+        self.tagsParser = Trie(config.SKILL_FILE)
+    def cut(self,value):
+        value=value.lower().replace('&nbsp','')
+        value = value.encode('UTF-8')
+        terms = self.tagsParser.parse(value)
+        v = {}
+        for i in terms:
+            v[i[0]]=i[1]
+        return v.values()
+    def update_doc(self,jdata):
+        writer = self.ix.writer()
+        for j in jdata['fields']:
+            tags = self.cut(j['jobname']+' '+j['description'])
+            jobid = j['jobid']
+            orgid = j['orgid']
+            jobname = unicode(j['jobname'])
+            tags = ' '.join(tags).decode('UTF-8')
+            ishunterjob=j['ishunterjob']
+            
+            writer.update_document(id=jobid,orgid=orgid,
+                    title=jobname,tags=tags
+                    ,ishunterjob=ishunterjob)
+            logger.info('update doc :'+str(jobid))
+
+        writer.commit()
+
+    def del_doc(self,id):
+        self.ix.delete_by_term('id',id)
+        logger.info('del doc :'+str(id))
+
     def run(self):
         logger.info('启动异步任务队列')
-        pageurls = self.conn.pongo.pageurls
         while(True):
             task = self.task_queue.get(1)
             if task[0] == 1:
-                jobs = task[1]
-                writer = self.ix.writer()
-                for j in jobs:
-                    writer.update_document(id=j[0],orgid=j[1],
-                            title=j[2],tags=j[3]
-                            ,ishunterjob=j[4])
-                    logger.info('update doc :'+str(j[0]))
-                writer.commit()
+                jdata = task[1]
+                self.update_doc(jdata)
             elif task[0] == 2:
                 id = task[1]
-                self.ix.delete_by_term('id',id)
-                logger.info('del doc :'+str(id))
-            elif task[0] == 3:
-                url = task[1]
-                pageurls.insert({"_id":url})
-                logger.info('adv insert :'+url)
+                self.del_doc(id)
 
 class ADIndex:
 
-    def get_mac_address(self):
-        node = uuid.getnode()
-        mac = uuid.UUID(int = node).hex[-12:]
-        return mac
 
-    def __init__(self,indexdir):
-        exists = index.exists_in(indexdir)
-        if exists :
-            self.ix =index.open_dir(indexdir)
-        else:
-            schema = Schema(title=TEXT(stored=True),
-                    id=NUMERIC(unique=True,stored=True),
-                    orgid=NUMERIC(stored=True),
-                    ishunterjob=NUMERIC(stored=True),
-                    tags=KEYWORD(stored=True)
-                    )
-            self.ix = create_in(indexdir, schema)
-        self.mac_address=self.get_mac_address()
+    def __init__(self,ix,task_queue,pid):
+        self.serverName = "%s_%d" %(config.get_mac_address(),pid)
         self.conn = pymongo.Connection(config.MONGO_CONN)
-        self.tagsParser = Trie(config.SKILL_FILE)
-        self.task_queue = Queue(2048)
-        self.update_task_thread = update_task(self.task_queue,self.ix)
-        self.update_task_thread.start()
+        self.pageurls = self.conn.pongo.pageurls
+        self.task_queue = task_queue        
+        self.ix = ix
         self.p = re.compile(u'(http://blog.csdn.net/[^\\/]+/article/details/\\d+)')
      
-    def add_doc(self,jobs):
-        self.task_queue.put((1,jobs))
-        return {'add doc size':len(jobs)}
+    def add_doc(self,jdata):
+        self.task_queue.put((1,jdata))
+        return {"message": "add doc ok"}
     def del_doc(self,id):
         self.task_queue.put((2,id))
-        return {'del doc ':id}
+        return {"del doc ":id}
     def find_by_query(self,q,limit):
         jobs = self.ix.searcher().search(q,limit=limit)
         return jobs
@@ -125,13 +125,16 @@ class ADIndex:
                 tags = tags.replace(',',' OR ')
                 return self.find(tags,limit)
             else:
-                self.task_queue.put((3,url))
+                self.insert_url(url)
                 return None
         else:
             return None
+    def insert_url(self,url):
+        self.pageurls.insert({"_id":url})
+        logger.info('adv insert :'+url)
     def jobs2json(self,jobs):
         rep = {}
-        rep["server"] = self.mac_address
+        rep["server"] = self.serverName
         rep["state"] = True
         response = {}
         rep['response'] = response
@@ -158,14 +161,6 @@ class ADIndex:
         else:
             return self.find(query,limit)
 
-    def cut(self,value):
-        value=value.lower().replace('&nbsp','')
-        value = value.encode('UTF-8')
-        terms = self.tagsParser.parse(value)
-        v = {}
-        for i in terms:
-            v[i[0]]=i[1]
-        return v.values()
 
     def dispatch_hander(self,worker,frames):
         header = frames[2]
@@ -176,19 +171,9 @@ class ADIndex:
             action = jdata ["action"]
             rep = 'request err :'+data
             if action == "syncDoc":
-                rep = {"message", "ok"};
+                rep = {"message": "syncDoc ok"}
             elif header == 'update' and action == "updateDoc":
-                jobs=[]
-                for j in jdata['fields']:
-                    tags = self.cut(j['jobname']+' '+j['description'])
-                    jobid = j['jobid']
-                    orgid = j['orgid']
-                    jobname = unicode(j['jobname'])
-                    tags = ' '.join(tags).decode('UTF-8')
-                    ishunterjob=j['ishunterjob']
-                    jobs.append((jobid,orgid,jobname,tags,ishunterjob))
-
-                rep = self.add_doc(jobs)
+                rep = self.add_doc(jdata)
             #remove
             #{"action":"removeDoc","name":"job","keyID":"64983"}            
             elif header == 'remove' and action == "removeDoc":
@@ -223,8 +208,8 @@ class ADIndex:
                 elif action == 'hunterjob':#获取最新猎头数据
                     rep = self.jobs2json(self.hunter_job(size))
                     logger.info('search hunterjob')
-        except:
-            logger.error("except:"+str(frames))
+        except Exception,e:
+            logger.error("except:%s\n%s" %(frames,e))
 
         rep = json.dumps(rep)
         msg = [frames[0],frames[1],rep.encode('UTF-8')]

@@ -21,11 +21,12 @@
 from random import randint
 import time
 import zmq
-from ad_service import ADIndex
+from ad_service import ADIndex,update_task
 import sys
 import config
-import uuid
-
+from multiprocessing import Process, Queue
+from whoosh import index
+from whoosh.fields import *
 
 logger = config.getLogger('ppworker',"./data/ppworker.log")
 
@@ -44,18 +45,14 @@ HOST = 'localhost'
 WORKER_HOST="tcp://localhost:5556"
 SUBSCRIBER_HOST="tcp://localhost:5557"
 
-def get_mac_address():
-    node = uuid.getnode()
-    mac = uuid.UUID(int = node).hex[-12:]
-    return mac
 
-mac_address = get_mac_address()
+mac_address = config.get_mac_address()
 
-def worker_socket(context, poller):
+def worker_socket(context, poller,pid):
     """Helper function that returns a new configured socket
        connected to the Paranoid Pirate queue"""
     worker = context.socket(zmq.DEALER) # DEALER
-    identity = "work-%s:%04X-%04X" % (mac_address,randint(0, 0x10000), randint(0, 0x10000))
+    identity = "work-%s-%d:%04X-%04X" % (mac_address,pid,randint(0, 0x10000), randint(0, 0x10000))
     worker.setsockopt(zmq.IDENTITY, identity)
     poller.register(worker, zmq.POLLIN)
     worker.connect(WORKER_HOST)
@@ -69,30 +66,21 @@ def dispatch_hander(worker,frames):
     time.sleep(1)  # Do some heavy work
 
 
-def subscriber_socket(context,poller):
+def subscriber_socket(context,poller,pid):
     subscriber = context.socket(zmq.SUB)  # SUB
-    identity = "sub-%s:%04X-%04X" % (mac_address,randint(0, 0x10000), randint(0, 0x10000))
+    identity = "sub-%s-%d:%04X-%04X" % (mac_address,pid,randint(0, 0x10000), randint(0, 0x10000))
     subscriber.setsockopt(zmq.IDENTITY, identity)
     subscriber.setsockopt(zmq.SUBSCRIBE, '')
     poller.register(subscriber, zmq.POLLIN)
     subscriber.connect(SUBSCRIBER_HOST)
     return subscriber
 
-if __name__ == '__main__':
-    '''
 
-    python ppworker.py indexdir 10.0.1.77
 
-    '''
-    if len(sys.argv)==3:
-        INDEX_PATH = sys.argv[1]
-        HOST = sys.argv[2]
-        WORKER_HOST="tcp://"+HOST+":5556"
-        SUBSCRIBER_HOST = "tcp://"+HOST+":5557"
+def work_hander(ix,task_queue,pid,has_sub = True):
 
-    logger.info('INDEX_PATH:%s HOST:%s' %(INDEX_PATH , HOST))
+    ad_idx = ADIndex (ix,task_queue,pid)
 
-    ad_idx = ADIndex (INDEX_PATH)
     context = zmq.Context(1)
     poller = zmq.Poller()
 
@@ -101,13 +89,16 @@ if __name__ == '__main__':
 
     heartbeat_at = time.time() + HEARTBEAT_INTERVAL
 
-    subscriber = subscriber_socket(context,poller)
+    subscriber = None 
+    
+    if has_sub:
+        subscriber = subscriber_socket(context,poller,pid)
 
-    worker = worker_socket(context, poller)
+    worker = worker_socket(context, poller,pid)
     #cycles = 0
     while True:
         socks = dict(poller.poll(HEARTBEAT_INTERVAL * 1000))
-        if socks.get(subscriber) == zmq.POLLIN:
+        if has_sub and socks.get(subscriber) == zmq.POLLIN:
             frames = subscriber.recv_multipart()
             if not frames:
                 break
@@ -140,7 +131,7 @@ if __name__ == '__main__':
                 #liveness = HEARTBEAT_LIVENESS
                 #time.sleep(1)  # Do some heavy work
             elif len(frames) == 1 and frames[0] == PPP_HEARTBEAT:
-                logger.info("I: Queue heartbeat")
+#                logger.info("I: Queue heartbeat")
                 liveness = HEARTBEAT_LIVENESS
             else:
                 logger.info("E: Invalid message: %d %s" % (len(frames),frames))
@@ -157,14 +148,51 @@ if __name__ == '__main__':
                 poller.unregister(worker)
                 worker.setsockopt(zmq.LINGER, 0)
                 worker.close()
-                worker = worker_socket(context, poller)
-
-                poller.unregister(subscriber)
-                subscriber.close()
-                subscriber = subscriber_socket(context,poller)
+                worker = worker_socket(context, poller,pid)
+                
+                if has_sub :
+                    poller.unregister(subscriber)
+                    subscriber.close()
+                    subscriber = subscriber_socket(context,poller,pid)
 
                 liveness = HEARTBEAT_LIVENESS
         if time.time() > heartbeat_at:
             heartbeat_at = time.time() + HEARTBEAT_INTERVAL
-            logger.info("I: Worker heartbeat")
+#            logger.info("I: Worker heartbeat")
             worker.send(PPP_HEARTBEAT)
+if __name__ == '__main__':
+    '''
+
+    python ppworker.py indexdir 10.0.1.77
+
+    '''
+    if len(sys.argv)==3:
+        INDEX_PATH = sys.argv[1]
+        HOST = sys.argv[2]
+        WORKER_HOST="tcp://"+HOST+":5556"
+        SUBSCRIBER_HOST = "tcp://"+HOST+":5557"
+        
+
+    logger.info('INDEX_PATH:%s HOST:%s' %(INDEX_PATH , HOST))
+    
+    ix = None
+    exists = index.exists_in(INDEX_PATH)
+    if exists :
+        ix =index.open_dir(INDEX_PATH)
+    else:
+        schema = Schema(title=TEXT(stored=True),
+                id=NUMERIC(unique=True,stored=True),
+                orgid=NUMERIC(stored=True),
+                ishunterjob=NUMERIC(stored=True),
+                tags=KEYWORD(stored=True)
+                )
+        ix = create_in(INDEX_PATH, schema)
+    
+    task_queue = Queue(2048)
+    ptask = update_task(task_queue,ix)
+    ptask.start()
+    for i in range(5):        
+        p = Process(target = work_hander, args=(ix,task_queue,i,i==0))
+        p.start()
+
+

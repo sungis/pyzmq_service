@@ -12,6 +12,7 @@ PPP_READY = "\x01"      # Signals worker is ready
 PPP_HEARTBEAT = "\x02"  # Signals worker heartbeat
 
 import logging
+import uuid
 def getLogger(name,logfile):
     logger=logging.getLogger(name)
     handler=logging.FileHandler(logfile)
@@ -20,3 +21,8 @@ def getLogger(name,logfile):
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
     return logger
+
+def get_mac_address():
+    node = uuid.getnode()
+    mac = uuid.UUID(int = node).hex[-12:]
+    return mac

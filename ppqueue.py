@@ -69,7 +69,7 @@ class WorkerQueue(object):
 class SearchCache(object):
     def __init__(self):
         self.size = 10240
-        self.timeout = 6
+        self.timeout = 6    #600
         self.changedTime = time.time()
         self.cache = LRUCache(self.size)
     def data_changed(self):
@@ -172,7 +172,7 @@ if __name__ == '__main__':
                     scache.data_changed()
                 elif frames[2] == 'cacheclean':
                     scache.del_cache()
-                    rep = 'del cache ok'
+                    rep = '{"message":"del cache ok"}'
                     msg = [frames[0],frames[1],rep]
                     frontend.send_multipart(msg)
                 elif frames[2]=='search':
